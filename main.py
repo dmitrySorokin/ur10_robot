@@ -1,56 +1,41 @@
 from ur10_env import UR10
 
-import pybullet
-import pybullet_data
 import gym
 import time
-import numpy as np
 from stable_baselines.common.policies import MlpPolicy
-from stable_baselines import PPO2, SAC
+from stable_baselines import PPO2, SAC, HER
 from stable_baselines.common.vec_env import DummyVecEnv
 from stable_baselines.common import make_vec_env
 
 
-def foo():
-    env = UR10('train')
-    train_env = DummyVecEnv([lambda : env]) # The algorithms require a vectorized environment to run
+class DoneOnSuccessWrapper(gym.Wrapper):
+    """
+    Reset on success and offsets the reward.
+    Useful for GoalEnv.
+    """
+    def __init__(self, env, reward_offset=1.0):
+        super(DoneOnSuccessWrapper, self).__init__(env)
+        self.reward_offset = reward_offset
 
-    model = PPO2(MlpPolicy, train_env, verbose=1, tensorboard_log="log", policy_kwargs={'layers': [256, 256]})
-    model.learn(total_timesteps=int(1e7))
-    model.save("ppo2_model")
-    del model # remove to demonstrate saving and loading
-    train_env.close()
-    del train_env
+    def step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        done = done or info.get('is_success', False)
+        reward += self.reward_offset
+        return obs, reward, done, info
 
-    model = PPO2.load("ppo2_model")
-
-    test_env = UR10('test')
-    state = test_env.reset()
-    for i in range(1000000):
-        print(model.predict([state]))
-        state, reward, done, info = test_env.step(model.predict([state])[0][0])
-        time.sleep(2)
-
-        if done:
-            test_env.reset()
-
-    test_env.close()
+    def compute_reward(self, achieved_goal, desired_goal, info):
+        reward = self.env.compute_reward(achieved_goal, desired_goal, info)
+        return reward + self.reward_offset
 
 
 if __name__ == '__main__':
-    env = UR10('test')
-    #env.reset()
+    env = DoneOnSuccessWrapper(UR10(is_train=False, is_dense=False))
+    env.reset()
     for i in range(1000000):
-        action = [0] * 12
-        # TODO gripper action from -1, to 0; with center in -0.5
-        # TODO initially gripper is open (in -1) -> 0, action = 1 closes gripper fully to 0.
-        value = -0.3
-        action[6:] = [value] * 6
-        #state, reward, done, info = env.step(action)
-        # time.sleep(2)
+        state, reward, done, info = env.step(env.action_space.sample())
+        time.sleep(0.1)
 
-        #if done:
-        #    env.reset()
-        pybullet.stepSimulation()
+        if done:
+            env.reset()
 
     env.close()
