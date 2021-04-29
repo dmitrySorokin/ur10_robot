@@ -2,10 +2,12 @@ from ur10_env import UR10
 
 import gym
 import time
-from stable_baselines.common.policies import MlpPolicy
-from stable_baselines import PPO2, SAC, HER
-from stable_baselines.common.vec_env import DummyVecEnv
-from stable_baselines.common import make_vec_env
+#from stable_baselines.common.policies import MlpPolicy
+#from stable_baselines import PPO2, SAC, HER
+#from stable_baselines.common.vec_env import DummyVecEnv
+#from stable_baselines.common import make_vec_env
+import numpy as np
+from tqdm import trange
 
 
 class DoneOnSuccessWrapper(gym.Wrapper):
@@ -28,14 +30,54 @@ class DoneOnSuccessWrapper(gym.Wrapper):
         return reward + self.reward_offset
 
 
-if __name__ == '__main__':
-    env = DoneOnSuccessWrapper(UR10(is_train=False, is_dense=False))
-    env.reset()
-    for i in range(1000000):
-        state, reward, done, info = env.step(env.action_space.sample())
-        time.sleep(0.1)
+class HardcodedPolicy(object):
+    def __init__(self, position_bounds):
+        self.step = 0
+        self.position_bounds = position_bounds
 
-        if done:
-            env.reset()
+    def act(self, state):
+        state = state['observation']
+        self.step += 1
+        gripper_pos = state[:3]
+        object_pos = state[12:15]
 
+        target_pos = np.zeros(4)
+        if self.step < 100:
+            delta = object_pos - gripper_pos
+            target_pos[:3] = self.rescale(delta, self.position_bounds)
+            target_pos[3] = -1
+        else:
+            delta = np.array([1, 0, 1]) - gripper_pos
+            target_pos[:3] = self.rescale(delta, self.position_bounds)
+            target_pos[3] = 1
+        return target_pos
+
+    def reset(self):
+        self.step = 0
+
+    def rescale(self, values, bounds):
+        result = np.zeros_like(values)
+        for i, (value, (lower_bound, upper_bound)) in enumerate(zip(values, bounds)):
+            result[i] = value / (upper_bound - lower_bound)
+        return result
+
+
+def evaluate(policy, env, nepisodes=100, viz=False):
+    success = []
+    for episode in trange(nepisodes):
+        state = env.reset()
+        policy.reset()
+        while True:
+            state, reward, done, info = env.step(policy.act(state))
+            if viz:
+                time.sleep(0.1)
+            if done:
+                success.append(info['is_success'])
+                break
     env.close()
+    return np.mean(success)
+
+
+if __name__ == '__main__':
+    env = DoneOnSuccessWrapper(UR10(is_train=True, is_dense=False))
+    print('success rate', evaluate(HardcodedPolicy(env.position_bounds), env))

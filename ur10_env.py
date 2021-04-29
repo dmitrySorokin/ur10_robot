@@ -9,10 +9,10 @@ class UR10(gym.Env):
     observation_space = gym.spaces.Dict(dict(
         desired_goal=gym.spaces.Box(-np.inf, np.inf, shape=(3,), dtype='float32'),
         achieved_goal=gym.spaces.Box(-np.inf, np.inf, shape=(3,), dtype='float32'),
-        observation=gym.spaces.Box(-np.inf, np.inf, shape=(29,), dtype='float32'),
+        observation=gym.spaces.Box(-np.inf, np.inf, shape=(25,), dtype='float32'),
     ))
 
-    action_space = gym.spaces.Box(low=-1, high=1, shape=(6,), dtype=float)
+    action_space = gym.spaces.Box(low=-1, high=1, shape=(4,), dtype=float)
 
     def __init__(self, is_train, is_dense=False):
         self.connect(is_train)
@@ -22,10 +22,12 @@ class UR10(gym.Env):
         self.planeId = pybullet.loadURDF('plane.urdf')
         robot_position = [0, 0, 1.0]
         robot_orientation = pybullet.getQuaternionFromEuler([0, 0, 0])
-        self.robot = pybullet.loadURDF('ur10_robot_constr.urdf', robot_position, robot_orientation)
+        self.robot = pybullet.loadURDF('ur10_robot.urdf', robot_position, robot_orientation)
 
         joint_type = ['REVOLUTE', 'PRISMATIC', 'SPHERICAL', 'PLANAR', 'FIXED']
         self.joints = []
+        self.links = {}
+
         for joint_id in range(pybullet.getNumJoints(self.robot)):
             info = pybullet.getJointInfo(self.robot, joint_id)
             data = {
@@ -39,6 +41,7 @@ class UR10(gym.Env):
             }
             if data['jointType'] != 'FIXED':
                 self.joints.append(data)
+                self.links[data['jointName']] = joint_id
 
         for i, joint in enumerate(self.joints):
             print(i, joint)
@@ -48,51 +51,62 @@ class UR10(gym.Env):
 
         self.step_id = None
         self.object = None
+
+        self.initial_joint_values = np.array([1.0, 0.0, 1.0])
+        self.gripper_orientation = pybullet.getQuaternionFromEuler([np.pi, 0, 0])
         self.joint_values = None
-        self.tray_position = np.array([0.5, -1, 0])
-        self.tray = pybullet.loadURDF('tray/traybox.urdf', self.tray_position)
+        self.gripper_value = None
+
         pybullet.loadURDF('table/table.urdf', globalScaling=1, basePosition=[0.5, 0, 0])
+
+        self.position_bounds = [(0.5, 1.0), (-0.25, 0.25), (0.7, 1)]
+        self.target_position = np.array([1, 0, 1])
 
     def step(self, action):
         self.step_id += 1
-        self.joint_values += np.array(action) * 0.1
+        self.joint_values += np.array(action[:3]) * 0.1
         self.joint_values = np.clip(self.joint_values, -1, 1)
+        self.gripper_value = 1 if action[3] > 0 else -1
 
-        for joint_id in range(5):
-            value = self.joint_values[joint_id]
-            minval, maxval = self.joints[joint_id]['jointLowerLimit'], self.joints[joint_id]['jointUpperLimit']
-            value = (value + 1) / 2 * (maxval - minval) + minval
-            pybullet.setJointMotorControl2(self.robot, self.joints[joint_id]['jointID'],
-                                           pybullet.POSITION_CONTROL,
-                                           targetPosition=value)
-
-        gripper_value = self.compute_gripper_value()
+        # end effector points down, not up (in case useOrientation==1)
+        target_pos = self._rescale(self.joint_values, self.position_bounds)
+        self.move_hand(target_pos, self.gripper_orientation)
 
         for joint_id in range(6, 12):
-            value = gripper_value
+            value = self.gripper_value
             minval, maxval = self.joints[joint_id]['jointLowerLimit'], self.joints[joint_id]['jointUpperLimit']
             value = (value + 1) / 2 * (maxval - minval) + minval
-            pybullet.setJointMotorControl2(self.robot, self.joints[joint_id]['jointID'],
-                                           pybullet.POSITION_CONTROL,
-                                           targetPosition=value)
+            pybullet.setJointMotorControl2(
+                self.robot,
+                self.joints[joint_id]['jointID'],
+                pybullet.POSITION_CONTROL,
+                targetPosition=value
+            )
 
         pybullet.stepSimulation()
 
         object_pos, object_orient = pybullet.getBasePositionAndOrientation(self.object)
-        return self.compute_state(), self.compute_reward(object_pos, self.tray_position, {}), self.is_done(), self.compute_info()
+        return self.compute_state(), self.compute_reward(object_pos, self.target_position, {}), self.is_done(), self.compute_info()
 
     def reset(self):
         self.step_id = 0
-        self.joint_values = np.zeros(self.action_space.shape)
+        self.joint_values = self.initial_joint_values
+        self.gripper_value = -1
 
         if self.object is not None:
             pybullet.removeBody(self.object)
 
-        x_position = np.random.uniform(0.75, 1.2)
-        y_position = np.random.uniform(-0.25, 0.25)
-        orientation = pybullet.getQuaternionFromEuler([0, 0, np.random.uniform(0, 2 * np.pi)])
+        # FIXME randomize position
+        x_position = 0.7 #np.random.uniform(0.5, 1)
+        y_position = 0 #np.random.uniform(-0.25, 0.25)
+
+        # FIXME add rotation
+        orientation = pybullet.getQuaternionFromEuler([0, 0, 0])
 
         self.object = pybullet.loadURDF('cube_small.urdf', [x_position, y_position, 0.6], orientation, globalScaling=1)
+        for _ in range(100):
+            self.move_hand(self.initial_joint_values, self.gripper_orientation)
+            pybullet.stepSimulation()
 
         return self.step([0] * self.action_space.shape[0])[0]
 
@@ -103,21 +117,26 @@ class UR10(gym.Env):
         pybullet.disconnect()
 
     def compute_state(self):
-        state = np.zeros(12 * 2 + 4 + 1)
-        for i, joint in enumerate(self.joints):
-            data = pybullet.getJointState(self.robot, joint['jointID'])
-            position, velocity = data[:2]
-            state[i] = position
-            state[i + 12] = velocity
+        state = np.zeros(3 * 4 + 3 * 4 + 1)
+        gripper_position, gripper_orientation, _, _, _, _, gripper_velocity, gripper_angular_velocity = \
+            pybullet.getLinkState(self.robot, linkIndex=self.links['gripper_finger_joint'], computeLinkVelocity=True)
+        state[:3] = gripper_position
+        state[3:6] = pybullet.getEulerFromQuaternion(gripper_orientation)
+        state[6:9] = gripper_velocity
+        state[9:12] = gripper_angular_velocity
 
         object_pos, object_orient = pybullet.getBasePositionAndOrientation(self.object)
-        state[24: 28] = object_orient
-        state[28] = self.compute_gripper_value()
+        object_velocity, object_angular_velocity = pybullet.getBaseVelocity(self.object)
+        state[12:15] = object_pos
+        state[15:18] = pybullet.getEulerFromQuaternion(object_orient)
+        state[18:21] = object_velocity
+        state[21:24] = object_angular_velocity
+        state[24] = self.compute_gripper_position()
 
-        return {'observation': state, 'desired_goal': self.tray_position, 'achieved_goal': object_pos}
+        return {'observation': state, 'desired_goal': self.target_position, 'achieved_goal': object_pos}
 
     def compute_reward(self, achieved_goal, desired_goal, info):
-        distance =  np.linalg.norm(achieved_goal - desired_goal)
+        distance = np.linalg.norm(achieved_goal - desired_goal)
         if self.is_dense:
             return -distance
         else:
@@ -128,16 +147,43 @@ class UR10(gym.Env):
 
     def compute_info(self):
         object_pos, object_orient = pybullet.getBasePositionAndOrientation(self.object)
-        distance = np.linalg.norm(object_pos - self.tray_position)
+        distance = np.linalg.norm(object_pos - self.target_position)
         return {'is_success': distance < self.distance_threshold}
-
-    def compute_gripper_value(self):
-        if self.joint_values[5] <= 0:
-           return -1
-        return 0
 
     def connect(self, is_train):
         if is_train:
             pybullet.connect(pybullet.DIRECT)
         else:
-             pybullet.connect(pybullet.GUI)
+            pybullet.connect(pybullet.GUI)
+
+    def _rescale(self, values, bounds):
+        result = np.zeros_like(values)
+        for i, (value, (lower_bound, upper_bound)) in enumerate(zip(values, bounds)):
+            result[i] = (value + 1) / 2 * (upper_bound - lower_bound) + lower_bound
+        return result
+
+    def move_hand(self, target_position, orientation):
+        joint_poses = pybullet.calculateInverseKinematics(
+            self.robot,
+            10, # 'gripper_finger_joint'
+            target_position,
+            orientation,
+            maxNumIterations=100,
+            residualThreshold=.01
+        )
+
+        for joint_id in range(6):
+            pybullet.setJointMotorControl2(
+                self.robot, self.joints[joint_id]['jointID'],
+                pybullet.POSITION_CONTROL,
+                targetPosition=joint_poses[joint_id]
+            )
+
+    def compute_gripper_position(self):
+        values = np.zeros(6)
+        for i, joint_id in enumerate(range(6, 12)):
+            data = pybullet.getJointState(self.robot, self.joints[joint_id]['jointID'])
+            position, velocity = data[:2]
+            lower_bound, upper_bound = self.joints[joint_id]['jointLowerLimit'], self.joints[joint_id]['jointUpperLimit']
+            values[i] = (position - lower_bound) / (upper_bound - lower_bound) * 2 - 1
+        return np.mean(values)
