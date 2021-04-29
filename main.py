@@ -41,11 +41,11 @@ class HardcodedPolicy(object):
         state = state['observation']
         self.step += 1
         gripper_pos = state[:3]
-        object_pos = state[12:15]
+        delta_pos = state[12:15]
 
         target_pos = np.zeros(4)
         if self.step < 100:
-            delta = object_pos - gripper_pos
+            delta = delta_pos
             target_pos[:3] = self.rescale(delta, self.position_bounds)
             target_pos[3] = -1
         else:
@@ -124,7 +124,7 @@ def train_hersac(nsteps):
 if __name__ == '__main__':
     #train_sac(1e6)
     #train_ppo(1e6)
-    env = FlattenObservation(DoneOnSuccessWrapper(UR10(is_train=False, is_dense=False)))
-    print('success rate', evaluate(Agent(PPO2.load('ppo_model')), env, viz=True))
-    #env = DoneOnSuccessWrapper(UR10(is_train=True, is_dense=False))
-    #print('success rate', evaluate(HardcodedPolicy(env.position_bounds), env))
+    #env = FlattenObservation(DoneOnSuccessWrapper(UR10(is_train=False, is_dense=False)))
+    #print('success rate', evaluate(Agent(PPO2.load('ppo_model')), env, viz=True))
+    env = DoneOnSuccessWrapper(UR10(is_train=False, is_dense=False))
+    print('success rate', evaluate(HardcodedPolicy(env.position_bounds), env, viz=True))

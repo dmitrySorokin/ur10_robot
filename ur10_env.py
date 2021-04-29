@@ -70,23 +70,13 @@ class UR10(gym.Env):
 
         # end effector points down, not up (in case useOrientation==1)
         target_pos = self._rescale(self.joint_values, self.position_bounds)
-        self.move_hand(target_pos, self.gripper_orientation)
-
-        for joint_id in range(6, 12):
-            value = self.gripper_value
-            minval, maxval = self.joints[joint_id]['jointLowerLimit'], self.joints[joint_id]['jointUpperLimit']
-            value = (value + 1) / 2 * (maxval - minval) + minval
-            pybullet.setJointMotorControl2(
-                self.robot,
-                self.joints[joint_id]['jointID'],
-                pybullet.POSITION_CONTROL,
-                targetPosition=value
-            )
+        self.move_hand(target_pos, self.gripper_orientation, self.gripper_value)
 
         pybullet.stepSimulation()
 
         object_pos, object_orient = pybullet.getBasePositionAndOrientation(self.object)
-        return self.compute_state(), self.compute_reward(object_pos, self.target_position, {}), self.is_done(), self.compute_info()
+        info = self.compute_info()
+        return self.compute_state(), self.compute_reward(object_pos, self.target_position, info), self.is_done(), info
 
     def reset(self):
         self.step_id = 0
@@ -107,10 +97,10 @@ class UR10(gym.Env):
         pybullet.changeDynamics(self.object, -1, mass=100)
 
         for _ in range(100):
-            self.move_hand(self.initial_joint_values, self.gripper_orientation)
+            self.move_hand(self.initial_joint_values, self.gripper_orientation, self.gripper_value)
             pybullet.stepSimulation()
 
-        return self.step([0] * self.action_space.shape[0])[0]
+        return self.compute_state()
 
     def render(self, mode='human'):
         pass
@@ -144,7 +134,11 @@ class UR10(gym.Env):
                 pybullet.getLinkState(self.robot, linkIndex=self.links['gripper_finger_joint'],
                                       computeLinkVelocity=True)
 
-            return -distance - np.linalg.norm(achieved_goal - np.asarray(gripper_position))
+            gripper_bonus = 0
+            if info['gripper_pos'] > -0.5 and info['gripper_pos'] < 0.1:
+                gripper_bonus = 10
+
+            return -distance - np.linalg.norm(achieved_goal - np.asarray(gripper_position)) + gripper_bonus
         else:
             return -(distance > self.distance_threshold).astype(np.float32)
 
@@ -154,7 +148,10 @@ class UR10(gym.Env):
     def compute_info(self):
         object_pos, object_orient = pybullet.getBasePositionAndOrientation(self.object)
         distance = np.linalg.norm(object_pos - self.target_position)
-        return {'is_success': distance < self.distance_threshold}
+        return {
+            'is_success': distance < self.distance_threshold,
+            'gripper_pos': self.compute_gripper_position()
+        }
 
     def connect(self, is_train):
         if is_train:
@@ -168,7 +165,7 @@ class UR10(gym.Env):
             result[i] = (value + 1) / 2 * (upper_bound - lower_bound) + lower_bound
         return result
 
-    def move_hand(self, target_position, orientation):
+    def move_hand(self, target_position, orientation, gripper_value):
         joint_poses = pybullet.calculateInverseKinematics(
             self.robot,
             10, # 'gripper_finger_joint'
@@ -183,6 +180,17 @@ class UR10(gym.Env):
                 self.robot, self.joints[joint_id]['jointID'],
                 pybullet.POSITION_CONTROL,
                 targetPosition=joint_poses[joint_id]
+            )
+
+        for joint_id in range(6, 12):
+            value = gripper_value
+            minval, maxval = self.joints[joint_id]['jointLowerLimit'], self.joints[joint_id]['jointUpperLimit']
+            value = (value + 1) / 2 * (maxval - minval) + minval
+            pybullet.setJointMotorControl2(
+                self.robot,
+                self.joints[joint_id]['jointID'],
+                pybullet.POSITION_CONTROL,
+                targetPosition=value
             )
 
     def compute_gripper_position(self):
