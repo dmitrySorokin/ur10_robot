@@ -97,13 +97,15 @@ class UR10(gym.Env):
             pybullet.removeBody(self.object)
 
         # FIXME randomize position
-        x_position = 0.7 #np.random.uniform(0.5, 1)
+        x_position = 1 #np.random.uniform(0.5, 1)
         y_position = 0 #np.random.uniform(-0.25, 0.25)
 
         # FIXME add rotation
         orientation = pybullet.getQuaternionFromEuler([0, 0, 0])
 
-        self.object = pybullet.loadURDF('cube_small.urdf', [x_position, y_position, 0.6], orientation, globalScaling=1)
+        self.object = pybullet.loadURDF('block.urdf', [x_position, y_position, 0.6], orientation, globalScaling=2)
+        pybullet.changeDynamics(self.object, -1, mass=100)
+
         for _ in range(100):
             self.move_hand(self.initial_joint_values, self.gripper_orientation)
             pybullet.stepSimulation()
@@ -127,7 +129,7 @@ class UR10(gym.Env):
 
         object_pos, object_orient = pybullet.getBasePositionAndOrientation(self.object)
         object_velocity, object_angular_velocity = pybullet.getBaseVelocity(self.object)
-        state[12:15] = object_pos
+        state[12:15] = np.asarray(object_pos) - gripper_position
         state[15:18] = pybullet.getEulerFromQuaternion(object_orient)
         state[18:21] = object_velocity
         state[21:24] = object_angular_velocity
@@ -138,7 +140,11 @@ class UR10(gym.Env):
     def compute_reward(self, achieved_goal, desired_goal, info):
         distance = np.linalg.norm(achieved_goal - desired_goal)
         if self.is_dense:
-            return -distance
+            gripper_position, gripper_orientation, _, _, _, _, gripper_velocity, gripper_angular_velocity = \
+                pybullet.getLinkState(self.robot, linkIndex=self.links['gripper_finger_joint'],
+                                      computeLinkVelocity=True)
+
+            return -distance - np.linalg.norm(achieved_goal - np.asarray(gripper_position))
         else:
             return -(distance > self.distance_threshold).astype(np.float32)
 

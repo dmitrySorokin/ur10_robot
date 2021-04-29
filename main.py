@@ -1,11 +1,13 @@
+from gym.wrappers import FlattenObservation
+
 from ur10_env import UR10
 
 import gym
 import time
-#from stable_baselines.common.policies import MlpPolicy
-#from stable_baselines import PPO2, SAC, HER
-#from stable_baselines.common.vec_env import DummyVecEnv
-#from stable_baselines.common import make_vec_env
+from stable_baselines.common.policies import MlpPolicy
+from stable_baselines import PPO2, SAC, HER
+from stable_baselines.common.vec_env import DummyVecEnv, SubprocVecEnv
+from stable_baselines.common import make_vec_env
 import numpy as np
 from tqdm import trange
 
@@ -62,6 +64,18 @@ class HardcodedPolicy(object):
         return result
 
 
+class Agent(object):
+    def __init__(self, model):
+        self.model = model
+
+    def act(self, state):
+        pred = self.model.predict([state])[0][0]
+        return pred
+
+    def reset(self):
+        pass
+
+
 def evaluate(policy, env, nepisodes=100, viz=False):
     success = []
     for episode in trange(nepisodes):
@@ -78,6 +92,39 @@ def evaluate(policy, env, nepisodes=100, viz=False):
     return np.mean(success)
 
 
+def train_ppo(nsteps):
+    train_env = SubprocVecEnv([lambda: FlattenObservation(DoneOnSuccessWrapper(UR10(is_train=True, is_dense=True)))] * 8)
+    model = PPO2(MlpPolicy, train_env,
+                 verbose=1, tensorboard_log="log",
+                 policy_kwargs={'layers': [256, 256, 256]},
+                 )
+    model.learn(total_timesteps=int(nsteps))
+    model.save("ppo_model")
+
+
+def train_sac(nsteps):
+    train_env = FlattenObservation(DoneOnSuccessWrapper(UR10(is_train=True, is_dense=True)))
+    model = SAC('MlpPolicy', train_env,
+                 verbose=1, tensorboard_log="log",
+                 policy_kwargs={'layers': [256, 256, 256]},
+                 )
+    model.learn(total_timesteps=int(nsteps))
+    model.save("sac_model")
+
+
+def train_hersac(nsteps):
+    train_env = DoneOnSuccessWrapper(UR10(is_train=True, is_dense=False))
+    model = HER('MlpPolicy', train_env, SAC, verbose=1, tensorboard_log="log",
+                 policy_kwargs={'layers': [256, 256, 256]},)
+
+    model.learn(total_timesteps=int(nsteps))
+    model.save("her_model")
+
+
 if __name__ == '__main__':
-    env = DoneOnSuccessWrapper(UR10(is_train=True, is_dense=False))
-    print('success rate', evaluate(HardcodedPolicy(env.position_bounds), env))
+    #train_sac(1e6)
+    #train_ppo(1e6)
+    env = FlattenObservation(DoneOnSuccessWrapper(UR10(is_train=False, is_dense=False)))
+    print('success rate', evaluate(Agent(PPO2.load('ppo_model')), env, viz=True))
+    #env = DoneOnSuccessWrapper(UR10(is_train=True, is_dense=False))
+    #print('success rate', evaluate(HardcodedPolicy(env.position_bounds), env))
