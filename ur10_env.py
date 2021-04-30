@@ -111,10 +111,10 @@ class UR10(gym.Env):
             #    gripper_bonus = 10
 
             height_bonus = 0
-            if achieved_goal[2] > 0.7:
-                height_bonus = 10
+            #if achieved_goal[2] > 0.7:
+            #    height_bonus = 10
 
-            return -distance - np.linalg.norm(achieved_goal - np.asarray(gripper_position)) + gripper_bonus + height_bonus
+            return 1 + -distance - np.linalg.norm(achieved_goal - np.asarray(gripper_position)) + gripper_bonus + height_bonus
         else:
             return -(distance > self.distance_threshold).astype(np.float32)
 

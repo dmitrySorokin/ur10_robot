@@ -12,26 +12,6 @@ import numpy as np
 from tqdm import trange
 
 
-class DoneOnSuccessWrapper(gym.Wrapper):
-    """
-    Reset on success and offsets the reward.
-    Useful for GoalEnv.
-    """
-    def __init__(self, env, reward_offset=1.0):
-        super(DoneOnSuccessWrapper, self).__init__(env)
-        self.reward_offset = reward_offset
-
-    def step(self, action):
-        obs, reward, done, info = self.env.step(action)
-        done = done or info.get('is_success', False)
-        reward += self.reward_offset
-        return obs, reward, done, info
-
-    def compute_reward(self, achieved_goal, desired_goal, info):
-        reward = self.env.compute_reward(achieved_goal, desired_goal, info)
-        return reward + self.reward_offset
-
-
 class HardcodedPolicy(object):
     def __init__(self, position_bounds):
         self.step = 0
@@ -78,22 +58,26 @@ class Agent(object):
 
 def evaluate(policy, env, nepisodes=100, viz=False):
     success = []
+    reward = []
     for episode in trange(nepisodes):
         state = env.reset()
         policy.reset()
+        reward.append(0)
         while True:
-            state, reward, done, info = env.step(policy.act(state))
+            state, rew, done, info = env.step(policy.act(state))
+            reward[-1] += rew
             if viz:
                 time.sleep(0.1)
             if done:
                 success.append(info['is_success'])
                 break
     env.close()
-    return np.mean(success)
+    print(reward)
+    return np.mean(success), np.mean(reward)
 
 
 def train_ppo(nsteps):
-    train_env = SubprocVecEnv([lambda: FlattenObservation(DoneOnSuccessWrapper(UR10(is_train=True, is_dense=True)))] * 8)
+    train_env = SubprocVecEnv([lambda: FlattenObservation(UR10(is_train=True, is_dense=True))] * 8)
     model = PPO2(MlpPolicy, train_env,
                  verbose=1, tensorboard_log="log",
                  policy_kwargs={'layers': [256, 256, 256]},
@@ -103,7 +87,7 @@ def train_ppo(nsteps):
 
 
 def train_sac(nsteps):
-    train_env = FlattenObservation(DoneOnSuccessWrapper(UR10(is_train=True, is_dense=True)))
+    train_env = FlattenObservation(UR10(is_train=True, is_dense=True))
     model = SAC('MlpPolicy', train_env,
                  verbose=1, tensorboard_log="log",
                  policy_kwargs={'layers': [256, 256, 256]},
@@ -113,7 +97,7 @@ def train_sac(nsteps):
 
 
 def train_hersac(nsteps):
-    train_env = DoneOnSuccessWrapper(UR10(is_train=True, is_dense=False))
+    train_env = UR10(is_train=True, is_dense=False)
     model = HER('MlpPolicy', train_env, SAC, verbose=1, tensorboard_log="log",
                  policy_kwargs={'layers': [256, 256, 256]},)
 
@@ -124,7 +108,7 @@ def train_hersac(nsteps):
 if __name__ == '__main__':
     #train_sac(1e6)
     #train_ppo(1e6)
-    #env = FlattenObservation(DoneOnSuccessWrapper(UR10(is_train=False, is_dense=False)))
+    #env = FlattenObservation(UR10(is_train=False, is_dense=False))
     #print('success rate', evaluate(Agent(PPO2.load('ppo_model')), env, viz=True))
-    env = DoneOnSuccessWrapper(UR10(is_train=False, is_dense=False))
-    print('success rate', evaluate(HardcodedPolicy(env.position_bounds), env, viz=True))
+    env = UR10(is_train=True, is_dense=True)
+    print('success rate', evaluate(HardcodedPolicy(env.position_bounds), env, viz=False))
