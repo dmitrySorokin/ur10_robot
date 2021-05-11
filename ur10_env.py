@@ -5,7 +5,6 @@ import numpy as np
 
 
 class UR10(gym.Env):
-    gym.spaces.Dict()
     observation_space = gym.spaces.Dict(dict(
         desired_goal=gym.spaces.Box(-np.inf, np.inf, shape=(3,), dtype='float32'),
         achieved_goal=gym.spaces.Box(-np.inf, np.inf, shape=(3,), dtype='float32'),

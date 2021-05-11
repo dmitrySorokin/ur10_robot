@@ -61,7 +61,7 @@ python3 main.py --agent ppo --mode train
 
 ### evaluate ppo agent
 ```
-python3 main.py --agent ppo --mode eva
+python3 main.py --agent ppo --mode eval
 ```
 
 ### visualize ppo agent
