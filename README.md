@@ -11,9 +11,48 @@ in catkin_ws do:
 * ```rosrun xacro xacro ur10_robot_constr.urdf.xacro > my_robot.urdf```
 * ```check_urdf my_robot.urdf```
 
-# Run
-```python3 main.py```
+# Enviroment
+### Observation:
+    obs[:3] = gripper_position
+    obs[3:6] = gripper_orientation
+    obs[6:9] = gripper_velocity
+    obs[9:12] = gripper_angular_velocity
+    obs[12:15] = object_position - gripper_position
+    obs[15:18] = object_orientation
+    obs[18:21] = object_velocity
+    obs[21:24] = object_angular_velocity
+    obs[24] = gripper_open_value
 
-# Final goal
-Final goal was to train an RL agent using stable-baselines PPO2 algorithm to pick and place the cube to a specific location. 
-But it seems not feasible to do without hierarchical experience replay and inverse kinematics or fancy reward shaping or behaviour cloning methods. 
+### Action:
+    action[0:3] = delta x,y,z gripper position
+    action[3] - open / close gripper
+
+### Reward:
+
+#### dense reward:
+    reward = 1 + -|object_position - desired_position| - |object_position - gripper_position|
+#### space reward:
+    reward = 0 if goal achieved -1 othervise
+
+# Run
+
+### evaluate script agent
+``` python3 main.py --agent script --mode eval```  
+
+### visualize script agent
+``` python3 main.py --agent script --mode viz```  
+
+### train ppo agent
+``` python3 main.py --agent ppo --mode train```
+
+### evaluate ppo agent
+``` python3 main.py --agent ppo --mode eval```  
+
+### visualize ppo agent
+``` python3 main.py --agent ppo --mode viz```  
+
+
+# Evaluation results
+ Scripted agent success | PPO agent success | Scripted agent reward | PPO agent reward |
+| ------------- | ------------- | ------------- | ------------- |
+| 0.98  | 0  | 122.8  | 0 |

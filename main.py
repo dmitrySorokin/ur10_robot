@@ -1,7 +1,4 @@
 from gym.wrappers import FlattenObservation
-
-from ur10_env import UR10
-
 import gym
 import time
 from stable_baselines.common.policies import MlpPolicy
@@ -10,9 +7,12 @@ from stable_baselines.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines.common import make_vec_env
 import numpy as np
 from tqdm import trange
+import argparse
+
+from ur10_env import UR10
 
 
-class HardcodedPolicy(object):
+class HardcodedAgent(object):
     def __init__(self, position_bounds):
         self.step = 0
         self.position_bounds = position_bounds
@@ -25,13 +25,14 @@ class HardcodedPolicy(object):
 
         target_pos = np.zeros(4)
         if self.step < 100:
-            delta = delta_pos
+            delta = delta_pos + np.array([0, 0, 1]) / self.step
             target_pos[:3] = self.rescale(delta, self.position_bounds)
             target_pos[3] = -1
         else:
             delta = np.array([1, 0, 1]) - gripper_pos
             target_pos[:3] = self.rescale(delta, self.position_bounds)
             target_pos[3] = 1
+
         return target_pos
 
     def reset(self):
@@ -44,7 +45,7 @@ class HardcodedPolicy(object):
         return result
 
 
-class Agent(object):
+class RLAgent(object):
     def __init__(self, model):
         self.model = model
 
@@ -70,6 +71,7 @@ def evaluate(policy, env, nepisodes=100, viz=False):
                 time.sleep(0.1)
             if done:
                 success.append(info['is_success'])
+                print(success[-1])
                 break
     env.close()
     print(reward)
@@ -86,29 +88,20 @@ def train_ppo(nsteps):
     model.save("ppo_model")
 
 
-def train_sac(nsteps):
-    train_env = FlattenObservation(UR10(is_train=True, is_dense=True))
-    model = SAC('MlpPolicy', train_env,
-                 verbose=1, tensorboard_log="log",
-                 policy_kwargs={'layers': [256, 256, 256]},
-                 )
-    model.learn(total_timesteps=int(nsteps))
-    model.save("sac_model")
-
-
-def train_hersac(nsteps):
-    train_env = UR10(is_train=True, is_dense=False)
-    model = HER('MlpPolicy', train_env, SAC, verbose=1, tensorboard_log="log",
-                 policy_kwargs={'layers': [256, 256, 256]},)
-
-    model.learn(total_timesteps=int(nsteps))
-    model.save("her_model")
-
-
 if __name__ == '__main__':
-    #train_sac(1e6)
-    #train_ppo(1e6)
-    #env = FlattenObservation(UR10(is_train=False, is_dense=False))
-    #print('success rate', evaluate(Agent(PPO2.load('ppo_model')), env, viz=True))
-    env = UR10(is_train=True, is_dense=True)
-    print('success rate', evaluate(HardcodedPolicy(env.position_bounds), env, viz=False))
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--agent', type=str, choices=['ppo', 'script'])
+    parser.add_argument('--mode', type=str, choices=['train', 'eval', 'viz'])
+    args = parser.parse_args()
+
+    if args.mode == 'train':
+        assert args.agent == 'ppo', 'script agent is not trainable'
+        train_ppo(1e7)
+    else:
+        if args.agent == 'ppo':
+            agent = RLAgent(PPO2.load('ppo_model.zip'))
+            env = FlattenObservation(UR10(is_train=args.mode == 'eval', is_dense=True))
+        else:
+            agent = HardcodedAgent(UR10.position_bounds)
+            env = UR10(is_train=args.mode == 'eval', is_dense=True)
+        print('success rate', evaluate(agent, env, viz=args.mode != 'eval'))

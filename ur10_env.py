@@ -13,6 +13,7 @@ class UR10(gym.Env):
     ))
 
     action_space = gym.spaces.Box(low=-1, high=1, shape=(4,), dtype=float)
+    position_bounds = [(0.5, 1.0), (-0.25, 0.25), (0.7, 1)]
 
     def __init__(self, is_train, is_dense=False):
         self.connect(is_train)
@@ -36,7 +37,6 @@ class UR10(gym.Env):
         self.joint_values = None
         self.gripper_value = None
 
-        self.position_bounds = [(0.5, 1.0), (-0.25, 0.25), (0.7, 1)]
         self.target_position = np.array([1, 0, 1])
 
     def step(self, action):
@@ -58,9 +58,8 @@ class UR10(gym.Env):
     def reset(self):
         self._reset_world()
 
-        # FIXME randomize position
-        x_position = 1 #np.random.uniform(0.5, 1)
-        y_position = 0 #np.random.uniform(-0.25, 0.25)
+        x_position = np.random.uniform(0.75, 1)
+        y_position = np.random.uniform(-0.25, 0.25)
 
         # FIXME add rotation
         orientation = pybullet.getQuaternionFromEuler([0, 0, np.pi / 2])
@@ -106,15 +105,7 @@ class UR10(gym.Env):
                 pybullet.getLinkState(self.robot, linkIndex=self.links['gripper_finger_joint'],
                                       computeLinkVelocity=True)
 
-            gripper_bonus = 0
-            #if info['gripper_pos'] > -0.5 and info['gripper_pos'] < 0.1:
-            #    gripper_bonus = 10
-
-            height_bonus = 0
-            #if achieved_goal[2] > 0.7:
-            #    height_bonus = 10
-
-            return 1 + -distance - np.linalg.norm(achieved_goal - np.asarray(gripper_position)) + gripper_bonus + height_bonus
+            return 1 + -distance - np.linalg.norm(achieved_goal - np.asarray(gripper_position))
         else:
             return -(distance > self.distance_threshold).astype(np.float32)
 
