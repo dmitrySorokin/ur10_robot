@@ -45,19 +45,29 @@ reward = 0 if goal achieved -1 othervise
 # Run
 
 ### evaluate script agent
-``` python3 main.py --agent script --mode eval```  
+```
+python3 main.py --agent script --mode eval
+```
 
 ### visualize script agent
-``` python3 main.py --agent script --mode viz```  
+``` 
+python3 main.py --agent script --mode viz
+```
 
 ### train ppo agent
-``` python3 main.py --agent ppo --mode train```
+``` 
+python3 main.py --agent ppo --mode train
+```
 
 ### evaluate ppo agent
-``` python3 main.py --agent ppo --mode eval```  
+```
+python3 main.py --agent ppo --mode eva
+```
 
 ### visualize ppo agent
-``` python3 main.py --agent ppo --mode viz```  
+```
+ python3 main.py --agent ppo --mode viz
+```
 
 
 # Evaluation results
