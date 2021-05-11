@@ -18,7 +18,6 @@ class UR10(gym.Env):
     def __init__(self, is_train, is_dense=False):
         self.connect(is_train)
 
-        # used by loadURDF
         pybullet.setAdditionalSearchPath(pybullet_data.getDataPath())
 
         self.is_dense = is_dense
@@ -73,6 +72,12 @@ class UR10(gym.Env):
 
         return self.compute_state()
 
+    def start_log_video(self, filename):
+        pybullet.startStateLogging(pybullet.STATE_LOGGING_VIDEO_MP4, filename)
+
+    def stop_log_video(self):
+        pybullet.stopStateLogging(pybullet.STATE_LOGGING_VIDEO_MP4)
+
     def render(self, mode='human'):
         pass
 
@@ -94,6 +99,7 @@ class UR10(gym.Env):
         state[15:18] = pybullet.getEulerFromQuaternion(object_orient)
         state[18:21] = object_velocity
         state[21:24] = object_angular_velocity
+
         state[24] = self.compute_gripper_position()
 
         return {'observation': state, 'desired_goal': self.target_position, 'achieved_goal': object_pos}

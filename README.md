@@ -53,6 +53,15 @@ in catkin_ws do:
 
 
 # Evaluation results
- Scripted agent success | PPO agent success | Scripted agent reward | PPO agent reward |
-| ------------- | ------------- | ------------- | ------------- |
-| 0.98  | 0  | 122.8  | 0 |
+ agent | reward | success | 
+| ------------- | ------------- | ------------- | 
+| scripted | 122.8  | 0.98  | 
+| PPO | 66  | 0  | 
+| random | 44  | 0  | 
+
+
+# Video
+ scripted agent | PPO agent | random agent | 
+| ------------- | ------------- | ------------- | 
+| [scripted](video/scripted_agent.mp4) | [ppo](video/ppo_agent.mp4)  | [random](video/random_agent.mp4)  |
+
