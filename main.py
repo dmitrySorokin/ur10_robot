@@ -65,7 +65,7 @@ class RLAgent(object):
         pass
 
 
-def evaluate(policy, env, nepisodes=100, viz=False,):
+def evaluate(policy, env, nepisodes=100, viz=False):
     success = []
     reward = []
     for episode in trange(nepisodes):
@@ -81,6 +81,7 @@ def evaluate(policy, env, nepisodes=100, viz=False,):
                 success.append(info['is_success'])
                 print(success[-1])
                 break
+
     env.close()
     print(reward)
     return np.mean(success), np.mean(reward)
@@ -116,12 +117,12 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.mode == 'train':
-        assert args.agent == 'ppo', 'script agent is not trainable'
-        train_ppo(1e5)
+        assert args.agent == 'ppo', f'{args.agent} agent is not trainable'
+        train_ppo(2e5)
     else:
         if args.agent == 'ppo':
             env = FlattenObservation(UR10(is_train=args.mode == 'eval', is_dense=True))
-            agent = RLAgent(PPO2.load('ppo_model.zip'))
+            agent = RLAgent(PPO2.load('models/ppo_model.zip'))
         elif args.agent == 'script':
             env = UR10(is_train=args.mode == 'eval', is_dense=True)
             agent = HardcodedAgent(UR10.position_bounds)

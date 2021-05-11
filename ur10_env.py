@@ -51,7 +51,7 @@ class UR10(gym.Env):
         pybullet.stepSimulation()
 
         object_pos, object_orient = pybullet.getBasePositionAndOrientation(self.object)
-        info = self.compute_info()
+        info = self.compute_info(action)
         return self.compute_state(), self.compute_reward(object_pos, self.target_position, info), self.is_done(), info
 
     def reset(self):
@@ -66,8 +66,6 @@ class UR10(gym.Env):
         #self.object = pybullet.loadURDF('cube_small.urdf', [x_position, y_position, 0.6], orientation, globalScaling=0.75)
 
         self.object = pybullet.loadURDF('random_urdfs/000/000.urdf', [x_position, y_position, 0.6], orientation, globalScaling=1)
-        # pybullet.changeDynamics(self.object, -1, mass=100)
-
         pybullet.stepSimulation()
 
         return self.compute_state()
@@ -111,7 +109,8 @@ class UR10(gym.Env):
                 pybullet.getLinkState(self.robot, linkIndex=self.links['gripper_finger_joint'],
                                       computeLinkVelocity=True)
 
-            return 1 + -distance - np.linalg.norm(achieved_goal - np.asarray(gripper_position))
+            gripper_distance = np.linalg.norm(achieved_goal - np.asarray(gripper_position))
+            return 1 - min(distance, 0.5) - gripper_distance
         else:
             return -(distance > self.distance_threshold).astype(np.float32)
 
@@ -119,12 +118,13 @@ class UR10(gym.Env):
         object_pos, object_orient = pybullet.getBasePositionAndOrientation(self.object)
         return self.step_id == 200 or np.linalg.norm(object_pos - np.array([1.0, 0.0, 0.6])) > 1.0
 
-    def compute_info(self):
+    def compute_info(self, last_action):
         object_pos, object_orient = pybullet.getBasePositionAndOrientation(self.object)
         distance = np.linalg.norm(object_pos - self.target_position)
         return {
             'is_success': distance < self.distance_threshold,
-            'gripper_pos': self.compute_gripper_position()
+            'gripper_pos': self.compute_gripper_position(),
+            'last_action': last_action
         }
 
     def connect(self, is_train):
@@ -203,9 +203,6 @@ class UR10(gym.Env):
             if data['jointType'] != 'FIXED':
                 self.joints.append(data)
                 self.links[data['jointName']] = joint_id
-
-        #for i, joint in enumerate(self.joints):
-        #    print(i, joint)
 
         self.step_id = 0
         self.object = None
